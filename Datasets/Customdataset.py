@@ -18,7 +18,7 @@ from os.path import splitext
 
 
 class CustomDataModule(pl.LightningDataModule):
-    def __init__(self, dataset_mode, class_labellist,coco_json_filename="", expansion_data_num = 1, transform_mode = 'aug', dataset_format = 'npy', batch_size=32,img_size=[128,128], data_dir='./data', ):
+    def __init__(self, dataset_mode, class_labellist,coco_json_filename="", expansion_data_num = 1, transform_mode = 'aug', dataset_format = 'npy', batch_size=32,img_size=[480,480], data_dir='./data', ):
         super().__init__()
         self.batch_size = batch_size
         self.data_dir = data_dir
@@ -38,7 +38,7 @@ class CustomDataModule(pl.LightningDataModule):
             if( self.transform_mode == 'aug'):
                 transform = albu_transforms.Compose([                    
                     albu_transforms.RandomRotate90(p = 0.7 ),
-                    albu_transforms.Resize(height=self.img_size[0], width=self.img_size[1]),
+                    # albu_transforms.Resize(height=self.img_size[0], width=self.img_size[1]),
                     albu_transforms.HorizontalFlip(),
                     albu_transforms.RandomResizedCrop(height=self.img_size[0], width=self.img_size[1], scale=(0.5, 1.0)),
                     # albu_transforms.RandomBrightnessContrast(brightness_limit=(-0.2, 0.2), contrast_limit=(-0.2, 0.2)),
@@ -49,7 +49,7 @@ class CustomDataModule(pl.LightningDataModule):
                 self.transform_method = 'albumentations'            
             else:
                 transform = transforms.Compose([
-                    transforms.Resize((self.img_size[0], self.img_size[1])),
+                    # transforms.Resize((self.img_size[0], self.img_size[1])),
                     # transforms.Grayscale(num_output_channels=3),
                     # transforms.ToTensor(),
                     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),

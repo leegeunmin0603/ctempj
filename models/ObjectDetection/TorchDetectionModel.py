@@ -24,10 +24,10 @@ class TorchDetectionModelModule(pl.LightningModule):
         if(model_name == 'retinanet_resnet50_fpn'):
             selectedmodel = models.retinanet_resnet50_fpn_v2( num_classes=num_classes,pretrained_backbone=True)
         else:
-            selectedmodel = models.fasterrcnn_resnet50_fpn_v2(num_classes=num_classes,pretrained_backbone=True)
+            selectedmodel = models.fasterrcnn_resnet50_fpn_v2(num_classes=num_classes)
             
-            in_features = selectedmodel.roi_heads.box_predictor.cls_score.in_features
-            selectedmodel.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+            # in_features = selectedmodel.roi_heads.box_predictor.cls_score.in_features
+            # selectedmodel.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
         
         self.model = selectedmodel             
         

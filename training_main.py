@@ -52,7 +52,7 @@ def train_main(training_purpose, model_name):
         data_dir = './data/Detection', 
         dataset_mode=training_purpose, # dataset 의 모드 선택 : classification , object detection
         expansion_data_num = 3000, # data 개수 임의 확장
-        transform_mode = 'aug', # augmentation 사용여부 aug : 다양한 모드 /  basic : normalization만
+        transform_mode = 'basic', # augmentation 사용여부 aug : 다양한 모드 /  basic : normalization만
         class_labellist= classlabellist, 
         batch_size=batch_size, 
         coco_json_filename='instances_default.json',
@@ -74,7 +74,7 @@ def train_main(training_purpose, model_name):
         if(model_name == "retinanet_resnet50_fpn"):
             model = TorchDetectionModel.TorchDetectionModelModule(num_classes=num_classes, learning_rate=learning_rate, model_name = "retinanet_resnet50_fpn")
         else:
-            model = TorchDetectionModel.TorchDetectionModelModule(num_classes=num_classes, learning_rate=learning_rate, model_name = "mask")
+            model = TorchDetectionModel.TorchDetectionModelModule(num_classes=num_classes, learning_rate=learning_rate, model_name = "fasterrcnn_resnet50_fpn_v2")
     
     # mlflow 새로운 저장소 경로(중앙 집중형) 설정
     new_local_path = "file:D:/mlruns/"
@@ -106,7 +106,7 @@ def train_main(training_purpose, model_name):
         
         
         # DataLoader를 사용하여 데이터 한 개 추출하고 signature 정보 획득
-        single_data, pred_signature = make_signature(data_module,model,training_purpose)
+        # single_data, pred_signature = make_signature(data_module,model,training_purpose)
             
         ## Resume Training
         resume_training = False
@@ -122,7 +122,7 @@ def train_main(training_purpose, model_name):
             trainer.fit(model, data_module)   
         
         
-        mlflow.pytorch.log_model(model,"model",input_example=single_data)
+        # mlflow.pytorch.log_model(model,"model",input_example=single_data)
         
         print('training done')
 
