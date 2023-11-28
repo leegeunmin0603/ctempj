@@ -1,6 +1,6 @@
 import torch
 
-import torchvision.transforms as transforms
+import torchvision.transforms.v2 as transforms
 from torchvision.datasets import CocoDetection
 from pycocotools.coco import COCO
 
@@ -10,7 +10,8 @@ from torch.utils.data import DataLoader, random_split
 
 import numpy as np
 import cv2 as cv
-# from PIL import Image
+
+import matplotlib.pyplot as plt
 
 import os
 import glob
@@ -38,21 +39,21 @@ class CustomDataModule(pl.LightningDataModule):
             if( self.transform_mode == 'aug'):
                 transform = albu_transforms.Compose([                    
                     albu_transforms.RandomRotate90(p = 0.7 ),
-                    # albu_transforms.Resize(height=self.img_size[0], width=self.img_size[1]),
+                    albu_transforms.Resize(height=self.img_size[0], width=self.img_size[1]),
                     albu_transforms.HorizontalFlip(),
                     albu_transforms.RandomResizedCrop(height=self.img_size[0], width=self.img_size[1], scale=(0.5, 1.0)),
                     # albu_transforms.RandomBrightnessContrast(brightness_limit=(-0.2, 0.2), contrast_limit=(-0.2, 0.2)),
                     albu_transforms.augmentations.transforms.ChannelShuffle(),
                     albu_transforms.augmentations.transforms.Downscale(scale_min=0.5,scale_max=0.9),
-                    albu_transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+                    # albu_transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
                 ])    
                 self.transform_method = 'albumentations'            
             else:
                 transform = transforms.Compose([
-                    # transforms.Resize((self.img_size[0], self.img_size[1])),
+                    transforms.Resize((self.img_size[0], self.img_size[1])),
                     # transforms.Grayscale(num_output_channels=3),
                     # transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                    # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ])
                 self.transform_method = 'basic' 
             
@@ -189,7 +190,8 @@ class CustomObjectDetectionDataset(torch.utils.data.Dataset):
         coco = self.coco_format_data
         img_id = self.ids[idx]
         
-        target = coco.loadAnns(img_id)
+        ann_ids = coco.getAnnIds(imgIds=img_id) #img id, category id를 받아서 해당하는 annotation id 반환        
+        target = coco.loadAnns(ann_ids)
         ###################### Data Load ########################
         
         image_filepath = self.root + '/' + coco.loadImgs(img_id)[0]['file_name']
@@ -199,9 +201,19 @@ class CustomObjectDetectionDataset(torch.utils.data.Dataset):
             input_image = cv.imread(image_filepath)
             input_image = cv.cvtColor(input_image, cv.COLOR_RGB2BGR)
         
-        ## Detection GT        
-        # label = self.labeldatas[idx]
+        ## Detection GT
 
+        bbox = []
+        labels = []
+        
+        for index in target:
+            
+            bbox.append([index['bbox'][0],index['bbox'][1],index['bbox'][0]+index['bbox'][2],index['bbox'][1]+index['bbox'][3]])
+            labels.append(index['category_id'])
+        
+        tensor_bbox = torch.as_tensor(bbox, dtype=torch.float32)
+        tensor_labels = torch.as_tensor(labels, dtype =torch.int64)
+        
         ###################### Augmentation ########################
         
         if(self.transform_method == 'basic'):
@@ -227,11 +239,17 @@ class CustomObjectDetectionDataset(torch.utils.data.Dataset):
             tensor_image = tensor_image.float()
         
         
-        bbox = [target[0]['bbox'][0],target[0]['bbox'][1],target[0]['bbox'][0]+target[0]['bbox'][2],target[0]['bbox'][1]+target[0]['bbox'][3]]
+        # bbox = tensor_bbox.numpy()
+        # no_image = tensor_image.permute(1,2,0).numpy()
+        # for box in bbox:
+        #     no_image = cv.rectangle(no_image,(int(box[0]),int(box[1])),(int(box[2]),int(box[3])),(255,0,0),1)
+        
+        # plt.subplot(1,1,1),plt.imshow(no_image)
+        # plt.show()
         
         output_target = [{
-            'boxes': torch.as_tensor(bbox, dtype=torch.float32),
-            'labels': torch.as_tensor(target[0]['category_id'], dtype =torch.int64)
+            'boxes': tensor_bbox,
+            'labels': tensor_labels
             }]
         
         return tensor_image,output_target  # 

@@ -26,8 +26,8 @@ class TorchDetectionModelModule(pl.LightningModule):
         else:
             selectedmodel = models.fasterrcnn_resnet50_fpn_v2(num_classes=num_classes)
             
-            # in_features = selectedmodel.roi_heads.box_predictor.cls_score.in_features
-            # selectedmodel.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+            in_features = selectedmodel.roi_heads.box_predictor.cls_score.in_features
+            selectedmodel.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
         
         self.model = selectedmodel             
         
