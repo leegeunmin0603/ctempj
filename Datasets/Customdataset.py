@@ -1,7 +1,7 @@
 import torch
 
 import torchvision.transforms.v2 as transforms
-from torchvision.datasets import CocoDetection
+# from torchvision.datasets import CocoDetection
 from pycocotools.coco import COCO
 
 import albumentations as albu_transforms
@@ -18,6 +18,8 @@ import glob
 from os.path import splitext
 
 
+
+
 class CustomDataModule(pl.LightningDataModule):
     def __init__(self, dataset_mode, class_labellist,coco_json_filename="", expansion_data_num = 1, transform_mode = 'aug', dataset_format = 'npy', batch_size=32,img_size=[480,480], data_dir='./data', ):
         super().__init__()
@@ -31,6 +33,7 @@ class CustomDataModule(pl.LightningDataModule):
         self.transform_method = ''
         self.expansion_data_num = expansion_data_num
         self.coco_json_filename = coco_json_filename
+        
 
     def setup(self, stage=None , validation_split=0.2):        
         
@@ -68,14 +71,122 @@ class CustomDataModule(pl.LightningDataModule):
             self.train_dataset, self.val_dataset = random_split(self.dataset, [train_size, val_size])
             
 
+    
+    
     def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
+        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, collate_fn=self.train_dataset.dataset.collate_fn)
 
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.batch_size)
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, collate_fn=self.val_dataset.dataset.collate_fn)
     
-       
+
+
+class CustomObjectDetectionDataset(torch.utils.data.Dataset):
+    def __init__(self, coco_root, transform_method, labellist , dataformat, coco_json_filename = "instances_default.json",expansion_data = 1, transform=None):
+        self.root = coco_root
+        self.transform = transform
+        self.dataformat = dataformat
+        self.transform_method = transform_method
+        
+        self.coco_format_data = COCO(coco_root+'/' +coco_json_filename)
+        self.ids = list(sorted(self.coco_format_data.imgs.keys()))
+        
+        
+        
+    def __len__(self):
+        
+        return len(self.ids)  
+
+    def collate_fn(self, batch):
+        images = [item[0] for item in batch]
+        targets = [item[1] for item in batch]
+        
+        # 이미지의 크기가 다를 수 있으므로 가장 큰 크기로 맞추어줍니다.
+        max_size = tuple(max(s) for s in zip(*[img.shape for img in images]))
+        
+        # 이미지를 패딩하여 동일한 크기로 만듭니다.
+        images_padded = torch.zeros(len(images), 3, max_size[1], max_size[2])
+        for i, img in enumerate(images):
+            images_padded[i, :, :img.shape[1], :img.shape[2]] = img
+        
+        # 각 타겟 정보를 리스트에서 텐서로 변환합니다.
+        targets = [{'boxes': t['boxes'], 'labels': t['labels']} for t in targets]
+
+        return images_padded, targets
     
+    def __getitem__(self, idx):
+        
+        coco = self.coco_format_data
+        img_id = self.ids[idx]
+        
+        ann_ids = coco.getAnnIds(imgIds=img_id) #img id, category id를 받아서 해당하는 annotation id 반환        
+        target = coco.loadAnns(ann_ids)
+        ###################### Data Load ########################
+        
+        image_filepath = self.root + '/' + coco.loadImgs(img_id)[0]['file_name']
+        if(self.dataformat == 'npy'):
+            input_image = np.load(image_filepath)
+        else:
+            input_image = cv.imread(image_filepath)
+            input_image = cv.cvtColor(input_image, cv.COLOR_RGB2BGR)
+        
+        ## Detection GT
+
+        bbox = []
+        labels = []
+        
+        for index in target:
+            
+            bbox.append([index['bbox'][0],index['bbox'][1],index['bbox'][0]+index['bbox'][2],index['bbox'][1]+index['bbox'][3]])
+            labels.append(index['category_id'])
+        
+        tensor_bbox = torch.as_tensor(bbox, dtype=torch.float32)
+        tensor_labels = torch.as_tensor(labels, dtype =torch.int64)
+        
+        ###################### Augmentation ########################
+        
+        if(self.transform_method == 'basic'):
+            ## normalize & permute
+            tensor_image = torch.from_numpy(input_image)
+            tensor_image = tensor_image.permute(2,0,1)
+            tensor_image = tensor_image.float()
+            tensor_image = tensor_image/255.
+            # tensor_image = tensor_image.unsqueeze(0)
+            
+            if self.transform is not None:
+                tensor_image = self.transform(tensor_image)
+        else:            
+            
+            input_image = np.array(input_image,np.float32)
+            
+            if self.transform is not None:
+                temp_input_image = self.transform(image = input_image)             
+                tensor_image = torch.from_numpy(temp_input_image['image'])
+            else:
+                tensor_image = torch.from_numpy(input_image)
+            
+            tensor_image = tensor_image.permute(2,0,1)
+            tensor_image = tensor_image.float()
+        
+        
+        # bbox = tensor_bbox.numpy()
+        # no_image = tensor_image.permute(1,2,0).numpy()
+        # for box in bbox:
+        #     no_image = cv.rectangle(no_image,(int(box[0]),int(box[1])),(int(box[2]),int(box[3])),(255,0,0),1)
+        
+        # plt.subplot(1,1,1),plt.imshow(no_image)
+        # plt.show()
+        
+        # tensor_bbox = tensor_bbox.squeeze(0)
+        # tensor_labels = tensor_labels.squeeze(0)
+        
+        output_target = {
+            'boxes': tensor_bbox,
+            'labels': tensor_labels
+            }
+        
+        return tensor_image,output_target  #        
+
 class CustomClassificationDataset(torch.utils.data.Dataset):
     def __init__(self, root, transform_method, labellist , dataformat, expansion_data = 1,transform=None):
         self.root = root
@@ -151,105 +262,3 @@ class CustomClassificationDataset(torch.utils.data.Dataset):
         return tensor_image,label
 
 
-class CustomObjectDetectionDataset(torch.utils.data.Dataset):
-    def __init__(self, coco_root, transform_method, labellist , dataformat, coco_json_filename = "instances_default.json",expansion_data = 1, transform=None):
-        self.root = coco_root
-        self.transform = transform
-        self.dataformat = dataformat
-        self.transform_method = transform_method
-        
-        self.coco_format_data = COCO(coco_root+'/' +coco_json_filename)
-        self.ids = list(sorted(self.coco_format_data.imgs.keys()))
-        
-        
-        # # coco data transform 추후 depth channel 추가를 위해 놔둠.      
-        # self.labels = [splitext(file)[0] for file in os.listdir(self.root)
-        #             if not file.startswith('.')]
-        
-        # self.labeldatas = []
-        # self.totalimages = []
-        
-        # for ii in range(0,expansion_data):
-        
-        #     for i in range(0,len(self.labels)):
-        #         data_list = glob.glob(self.root +'/' +self.labels[i] +'/*.'+self.dataformat)
-                        
-        #         self.totalimages = self.totalimages + data_list
-        #         for tx in range(0,len(data_list)):
-                    
-        #             indices = [name_idx for name_idx, name in enumerate(labellist) if name == self.labels[i]]
-                    
-        #             self.labeldatas.append(indices[0])
-
-    def __len__(self):
-        
-        return len(self.ids)  
-
-    def __getitem__(self, idx):
-        
-        coco = self.coco_format_data
-        img_id = self.ids[idx]
-        
-        ann_ids = coco.getAnnIds(imgIds=img_id) #img id, category id를 받아서 해당하는 annotation id 반환        
-        target = coco.loadAnns(ann_ids)
-        ###################### Data Load ########################
-        
-        image_filepath = self.root + '/' + coco.loadImgs(img_id)[0]['file_name']
-        if(self.dataformat == 'npy'):
-            input_image = np.load(image_filepath)
-        else:
-            input_image = cv.imread(image_filepath)
-            input_image = cv.cvtColor(input_image, cv.COLOR_RGB2BGR)
-        
-        ## Detection GT
-
-        bbox = []
-        labels = []
-        
-        for index in target:
-            
-            bbox.append([index['bbox'][0],index['bbox'][1],index['bbox'][0]+index['bbox'][2],index['bbox'][1]+index['bbox'][3]])
-            labels.append(index['category_id'])
-        
-        tensor_bbox = torch.as_tensor(bbox, dtype=torch.float32)
-        tensor_labels = torch.as_tensor(labels, dtype =torch.int64)
-        
-        ###################### Augmentation ########################
-        
-        if(self.transform_method == 'basic'):
-            ## normalize & permute
-            tensor_image = torch.from_numpy(input_image)
-            tensor_image = tensor_image.permute(2,0,1)
-            tensor_image = tensor_image.float()
-            tensor_image = tensor_image/255.
-            
-            if self.transform is not None:
-                tensor_image = self.transform(tensor_image)
-        else:            
-            
-            input_image = np.array(input_image,np.float32)
-            
-            if self.transform is not None:
-                temp_input_image = self.transform(image = input_image)             
-                tensor_image = torch.from_numpy(temp_input_image['image'])
-            else:
-                tensor_image = torch.from_numpy(input_image)
-            
-            tensor_image = tensor_image.permute(2,0,1)
-            tensor_image = tensor_image.float()
-        
-        
-        # bbox = tensor_bbox.numpy()
-        # no_image = tensor_image.permute(1,2,0).numpy()
-        # for box in bbox:
-        #     no_image = cv.rectangle(no_image,(int(box[0]),int(box[1])),(int(box[2]),int(box[3])),(255,0,0),1)
-        
-        # plt.subplot(1,1,1),plt.imshow(no_image)
-        # plt.show()
-        
-        output_target = [{
-            'boxes': tensor_bbox,
-            'labels': tensor_labels
-            }]
-        
-        return tensor_image,output_target  # 
