@@ -22,9 +22,10 @@ class TorchDetectionModelModule(pl.LightningModule):
         self.selected_modelname = model_name
         
         if(model_name == 'retinanet_resnet50_fpn'):
-            selectedmodel = models.retinanet_resnet50_fpn_v2( num_classes=num_classes,pretrained_backbone=True)
+            selectedmodel = models.retinanet_resnet50_fpn_v2( num_classes=num_classes, pretrained_backbone=True)
+            
         else:
-            selectedmodel = models.fasterrcnn_resnet50_fpn_v2(num_classes=num_classes)
+            selectedmodel = models.fasterrcnn_resnet50_fpn_v2(num_classes=num_classes, pretrained_backbone=True)
             
             in_features = selectedmodel.roi_heads.box_predictor.cls_score.in_features
             selectedmodel.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
@@ -43,14 +44,8 @@ class TorchDetectionModelModule(pl.LightningModule):
         imgdata, targets = batch
         # 
         
-        if(self.selected_modelname == 'retinanet_resnet50_fpn'):
-            output = self(imgdata,targets)
-            loss = output['classification'] + output['bbox_regression']
-        else:
-            
-            targets = [{k: v for k, v in t.items()} for t in targets]
-            loss_dict = self.model(imgdata, targets)
-            loss = sum(loss for loss in loss_dict.values())
+        loss_dict = self.model(imgdata,targets)
+        loss = sum(loss for loss in loss_dict.values())
         
         self.log('train_loss', loss, prog_bar=True)
         
@@ -64,21 +59,13 @@ class TorchDetectionModelModule(pl.LightningModule):
         
         self.model = self.model.train()
         
-        
-        
-        if(self.selected_modelname == 'retinanet_resnet50_fpn'):
-            output = self(imgdata,targets)
-            loss = output['classification'] + output['bbox_regression']
-        else:            
-            targets = [{k: v for k, v in t.items()} for t in targets]
-            loss_dict = self.model(imgdata, targets)
-            loss = sum(loss for loss in loss_dict.values())
-            
+        loss_dict = self.model(imgdata,targets)
+        loss = sum(loss for loss in loss_dict.values())
         
         self.log('val_loss', loss, prog_bar=True)
         
-        generate_image_path = self.generate_image(imgdata,'valid')        
-        mlflow.log_artifact(generate_image_path, artifact_path="images")
+        # generate_image_path = self.generate_image(imgdata,'valid')        
+        # mlflow.log_artifact(generate_image_path, artifact_path="images")
         
         return loss
     

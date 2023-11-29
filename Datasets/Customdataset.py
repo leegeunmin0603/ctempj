@@ -41,19 +41,19 @@ class CustomDataModule(pl.LightningDataModule):
             
             if( self.transform_mode == 'aug'):
                 transform = albu_transforms.Compose([                    
-                    albu_transforms.RandomRotate90(p = 0.7 ),
+                    albu_transforms.RandomRotate90(p = 0.5),
                     albu_transforms.Resize(height=self.img_size[0], width=self.img_size[1]),
-                    albu_transforms.HorizontalFlip(),
-                    albu_transforms.RandomResizedCrop(height=self.img_size[0], width=self.img_size[1], scale=(0.5, 1.0)),
+                    albu_transforms.HorizontalFlip(p =0.5),
+                    albu_transforms.RandomResizedCrop(height=self.img_size[0], width=self.img_size[1], scale=(0.5, 0.99)),
                     # albu_transforms.RandomBrightnessContrast(brightness_limit=(-0.2, 0.2), contrast_limit=(-0.2, 0.2)),
                     albu_transforms.augmentations.transforms.ChannelShuffle(),
                     albu_transforms.augmentations.transforms.Downscale(scale_min=0.5,scale_max=0.9),
                     # albu_transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-                ])    
+                ],bbox_params=albu_transforms.BboxParams(format='pascal_voc', min_area= 1000, label_fields=['class_labels'])) 
                 self.transform_method = 'albumentations'            
             else:
                 transform = transforms.Compose([
-                    transforms.Resize((self.img_size[0], self.img_size[1])),
+                    # transforms.Resize((self.img_size[0], self.img_size[1])),
                     # transforms.Grayscale(num_output_channels=3),
                     # transforms.ToTensor(),
                     # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
@@ -140,8 +140,7 @@ class CustomObjectDetectionDataset(torch.utils.data.Dataset):
             bbox.append([index['bbox'][0],index['bbox'][1],index['bbox'][0]+index['bbox'][2],index['bbox'][1]+index['bbox'][3]])
             labels.append(index['category_id'])
         
-        tensor_bbox = torch.as_tensor(bbox, dtype=torch.float32)
-        tensor_labels = torch.as_tensor(labels, dtype =torch.int64)
+        
         
         ###################### Augmentation ########################
         
@@ -160,25 +159,36 @@ class CustomObjectDetectionDataset(torch.utils.data.Dataset):
             input_image = np.array(input_image,np.float32)
             
             if self.transform is not None:
-                temp_input_image = self.transform(image = input_image)             
-                tensor_image = torch.from_numpy(temp_input_image['image'])
-            else:
-                tensor_image = torch.from_numpy(input_image)
+                transformed = self.transform(image = input_image, bboxes=bbox, class_labels = labels)             
+                input_image = np.array(transformed['image'],np.float32)
+                
+                if 'bboxes' in transformed and 'class_labels' in transformed:
+                
+                    bbox = torch.from_numpy(np.array(transformed['bboxes']))
+                    labels = torch.from_numpy(np.array(transformed['class_labels']))
+                else:
+                    bbox = torch.from_numpy(np.array([[0,0,0,0]]))
+                    labels = torch.from_numpy(np.array([[0]]))
+                
+            tensor_image = torch.from_numpy(input_image)
             
             tensor_image = tensor_image.permute(2,0,1)
             tensor_image = tensor_image.float()
         
         
+        tensor_bbox = torch.as_tensor(bbox, dtype=torch.float32)
+        tensor_labels = torch.as_tensor(labels, dtype =torch.int64)
+        
+        ########################### result view #################################
         # bbox = tensor_bbox.numpy()
         # no_image = tensor_image.permute(1,2,0).numpy()
+        # no_image = np.array(no_image,np.uint8)
         # for box in bbox:
         #     no_image = cv.rectangle(no_image,(int(box[0]),int(box[1])),(int(box[2]),int(box[3])),(255,0,0),1)
         
         # plt.subplot(1,1,1),plt.imshow(no_image)
         # plt.show()
         
-        # tensor_bbox = tensor_bbox.squeeze(0)
-        # tensor_labels = tensor_labels.squeeze(0)
         
         output_target = {
             'boxes': tensor_bbox,
